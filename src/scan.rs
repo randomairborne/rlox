@@ -22,9 +22,11 @@ impl Scanner {
         }
         let c = self.advance();
         if c.is_ascii_alphabetic() || c == '_' {
-            compile_error!(
-                "CURRENTLY HERE, SEE https://craftinginterpreters.com/scanning-on-demand.html"
-            );
+            while self.peek().is_ascii_alphanumeric() {
+                self.advance();
+            }
+            let ident = self.identifier();
+            return self.token(ident);
         }
         if c.is_ascii_digit() {
             return self.number();
@@ -41,6 +43,7 @@ impl Scanner {
             '+' => TokenKind::Plus,
             '/' => TokenKind::Slash,
             '*' => TokenKind::Star,
+            '\0' => TokenKind::Eof,
             '!' => {
                 if self.match_c('=') {
                     TokenKind::BangEqual
@@ -77,7 +80,7 @@ impl Scanner {
     fn token(&self, kind: TokenKind) -> Token {
         Token {
             kind,
-            src: self.src[self.current..self.start].iter().collect(),
+            src: self.src[self.start..self.current].iter().collect(),
             line: self.line,
         }
     }
@@ -131,6 +134,9 @@ impl Scanner {
         }
     }
     fn peek(&self) -> char {
+        if self.is_at_end() {
+            return '\0';
+        }
         self.src[self.current]
     }
     fn peek_next(&self) -> char {
@@ -170,12 +176,79 @@ impl Scanner {
 
         self.token(TokenKind::Number)
     }
+    fn identifier(&mut self) -> TokenKind {
+        match self.src[self.start] {
+            'a' => return self.check_keyword(1, 2, "nd", TokenKind::And),
+            'c' => return self.check_keyword(1, 4, "lass", TokenKind::Class),
+            'e' => return self.check_keyword(1, 3, "lse", TokenKind::Else),
+            'i' => return self.check_keyword(1, 1, "f", TokenKind::If),
+            'n' => return self.check_keyword(1, 2, "il", TokenKind::Nil),
+            'o' => return self.check_keyword(1, 1, "r", TokenKind::Or),
+            'p' => return self.check_keyword(1, 4, "rint", TokenKind::Print),
+            'r' => return self.check_keyword(1, 5, "eturn", TokenKind::Return),
+            's' => return self.check_keyword(1, 4, "uper", TokenKind::Super),
+            't' => {
+                if self.current - self.start > 1 {
+                    match self.src[self.start + 1] {
+                        'h' => return self.check_keyword(2, 2, "is", TokenKind::This),
+                        'r' => return self.check_keyword(2, 2, "ue", TokenKind::True),
+                        _ => {}
+                    }
+                }
+            }
+            'v' => return self.check_keyword(1, 2, "ar", TokenKind::Var),
+            'w' => return self.check_keyword(1, 4, "hile", TokenKind::While),
+            'f' => {
+                if self.current - self.start > 1 {
+                    match self.src[self.start + 1] {
+                        'a' => return self.check_keyword(2, 3, "lse", TokenKind::False),
+                        'o' => return self.check_keyword(2, 1, "r", TokenKind::For),
+                        'u' => return self.check_keyword(2, 1, "n", TokenKind::Fun),
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        TokenKind::Identifier
+    }
+    fn check_keyword(
+        &self,
+        start: usize,
+        length: usize,
+        rest: &'static str,
+        kind: TokenKind,
+    ) -> TokenKind {
+        let token_start = self.start + start;
+        if self.current - self.start == start + length
+            && self.src[token_start..token_start + length]
+                .iter()
+                .collect::<String>()
+                == rest
+        {
+            return kind;
+        }
+
+        return TokenKind::Identifier;
+    }
 }
 
+#[derive(Clone, Debug)]
 pub struct Token {
     pub kind: TokenKind,
     pub src: String,
     pub line: usize,
+}
+
+impl Default for Token {
+    fn default() -> Self {
+        Self {
+            kind: TokenKind::Error,
+            src: "".to_string(),
+            line: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
