@@ -1,18 +1,31 @@
-#[derive(Clone, Debug, PartialEq, Copy)]
+use std::rc::Rc;
+#[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Bool(bool),
     Number(f64),
-    Object(Box),
+    Str(Rc<str>),
     Nil,
 }
-compile_error!("https://craftinginterpreters.com/strings.html#values-and-objects");
+
 impl Value {
-    pub fn is_falsey(self) -> bool {
+    pub fn is_falsey(&self) -> bool {
         match self {
             Self::Bool(val) => !val,
             Self::Nil => true,
             _ => true,
         }
+    }
+    pub fn is_bool(&self) -> bool {
+        matches!(self, Value::Bool(_))
+    }
+    pub fn is_number(&self) -> bool {
+        matches!(self, Value::Number(_))
+    }
+    pub fn is_str(&self) -> bool {
+        matches!(self, Value::Str(_))
+    }
+    pub fn is_nil(&self) -> bool {
+        matches!(self, Value::Nil)
     }
 }
 
@@ -21,6 +34,7 @@ impl std::fmt::Display for Value {
         match self {
             Value::Bool(val) => write!(f, "{val}"),
             Value::Number(val) => write!(f, "{val}"),
+            Value::Str(val) => write!(f, "{val}"),
             Value::Nil => write!(f, "nil"),
         }
     }

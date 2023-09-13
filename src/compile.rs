@@ -2,7 +2,6 @@ use crate::{
     chunk::{Chunk, Op},
     scan::{Scanner, Token, TokenKind},
     value::Value,
-    vm::InterpretResult,
 };
 
 pub struct Compiler {
@@ -15,10 +14,9 @@ pub struct Compiler {
 }
 
 impl Compiler {
-    pub fn compile(source: String) -> (InterpretResult, Chunk) {
+    pub fn compile(source: String) -> Result<Chunk, ()> {
         let scanner = Scanner::init(source);
         let chunk = Chunk::init();
-        let mut line = 0;
         let mut compiler = Compiler {
             scanner,
             chunk,
@@ -28,17 +26,36 @@ impl Compiler {
             panic_mode: false,
         };
         compiler.advance();
-        compiler.expression();
-        compiler.consume(TokenKind::Eof, "Expected end of expression");
+        while !compiler.match_t(TokenKind::Eof) {
+            compiler.declaration();
+        }
         compiler.end();
         if compiler.had_error {
-            (InterpretResult::CompileError, compiler.chunk)
+            Err(())
         } else {
-            (InterpretResult::Ok, compiler.chunk)
+            Ok(compiler.chunk)
         }
     }
     fn expression(&mut self) {
         self.parse_precedence(Precedence::Assignment);
+    }
+    fn declaration(&mut self) {
+        self.statement();
+    }
+    fn statement(&mut self) {
+        if self.match_t(TokenKind::Print) {
+            self.print_statement();
+        }
+    }
+    fn print_statement(&mut self) {
+        self.expression();
+        self.consume(TokenKind::Semicolon, "Expect ';' after value.");
+        self.emit(Op::Print);
+    }
+    fn expression_statement(&mut self) {
+        self.expression();
+        self.consume(TokenKind::Semicolon, "Expect ';' after expression.");
+        self.emit(Op::Pop);
     }
     fn number(&mut self) {
         let num: f64 = self
@@ -91,6 +108,10 @@ impl Compiler {
             TokenKind::True => self.emit(Op::True),
             _ => unreachable!(),
         }
+    }
+    fn string(&mut self) {
+        let last_idx = self.previous.src.len() - 2;
+        self.emit_const(Value::Str(self.previous.src[1..=last_idx].into()));
     }
     fn parse_precedence(&mut self, precedence: Precedence) {
         self.advance();
@@ -176,6 +197,16 @@ impl Compiler {
     }
     fn current_chunk(&mut self) -> &mut Chunk {
         &mut self.chunk
+    }
+    fn match_t(&mut self, kind: TokenKind) -> bool {
+        if !self.check(kind) {
+            return false;
+        };
+        self.advance();
+        return true;
+    }
+    fn check(&self, kind: TokenKind) -> bool {
+        return self.current.kind == kind;
     }
 }
 
@@ -271,12 +302,11 @@ impl From<TokenKind> for ParseRule {
             TokenKind::Bang => P::new(Some(C::unary), None, Prec::None),
             TokenKind::BangEqual => P::new(None, Some(C::binary), Prec::Equality),
             TokenKind::EqualEqual => P::new(None, Some(C::binary), Prec::Equality),
-            TokenKind::Greater => ParseRule::new(None, Some(Compiler::binary), Prec::Comparison),
-            TokenKind::GreaterEqual => {
-                ParseRule::new(None, Some(Compiler::binary), Prec::Comparison)
-            }
-            TokenKind::Less => ParseRule::new(None, Some(Compiler::binary), Prec::Comparison),
-            TokenKind::LessEqual => ParseRule::new(None, Some(Compiler::binary), Prec::Comparison),
+            TokenKind::Greater => ParseRule::new(None, Some(C::binary), Prec::Comparison),
+            TokenKind::GreaterEqual => ParseRule::new(None, Some(C::binary), Prec::Comparison),
+            TokenKind::Less => ParseRule::new(None, Some(C::binary), Prec::Comparison),
+            TokenKind::LessEqual => ParseRule::new(None, Some(C::binary), Prec::Comparison),
+            TokenKind::String => ParseRule::new(Some(C::string), None, Prec::None),
             TokenKind::RightParen
             | TokenKind::LeftBrace
             | TokenKind::RightBrace
@@ -285,7 +315,6 @@ impl From<TokenKind> for ParseRule {
             | TokenKind::Semicolon
             | TokenKind::Equal
             | TokenKind::Identifier
-            | TokenKind::String
             | TokenKind::And
             | TokenKind::Class
             | TokenKind::Else

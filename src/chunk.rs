@@ -15,6 +15,8 @@ pub enum Op {
     Subtract,
     Multiply,
     Divide,
+    Print,
+    Pop,
     Return,
 }
 
