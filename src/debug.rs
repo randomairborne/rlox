@@ -30,21 +30,23 @@ impl crate::chunk::Op {
     pub fn disassemble(&self, chunk: &Chunk) -> Result<String, std::fmt::Error> {
         let mut f = String::with_capacity(1024);
         match self {
-            Self::Return => write!(f, "Op::Return")?,
-            Self::Negate => write!(f, "Op::Negate")?,
-            Self::Add => write!(f, "Op::Add")?,
-            Self::Subtract => write!(f, "Op::Subtract")?,
-            Self::Multiply => write!(f, "Op::Multiply")?,
-            Self::Divide => write!(f, "Op::Divide")?,
-            Self::Const(idx) => write!(f, "Op::Const {idx} {:?}", chunk.constants[*idx])?,
-            Self::Nil => write!(f, "Op::Nil")?,
-            Self::True => write!(f, "Op::True")?,
-            Self::False => write!(f, "Op::False")?,
-            Self::Not => write!(f, "Op::Not")?,
-            Self::Equal => write!(f, "Op::Equal")?,
-            Self::Greater => write!(f, "Op::Greater")?,
-            Self::Less => write!(f, "Op::Less")?,
-        }
+            Self::Return => write!(f, "Op::Return"),
+            Self::Pop => write!(f, "Op::Pop"),
+            Self::Print => write!(f, "Op::Print"),
+            Self::Negate => write!(f, "Op::Negate"),
+            Self::Add => write!(f, "Op::Add"),
+            Self::Subtract => write!(f, "Op::Subtract"),
+            Self::Multiply => write!(f, "Op::Multiply"),
+            Self::Divide => write!(f, "Op::Divide"),
+            Self::Const(idx) => write!(f, "Op::Const {idx} {:?}", chunk.constants[*idx]),
+            Self::Nil => write!(f, "Op::Nil"),
+            Self::True => write!(f, "Op::True"),
+            Self::False => write!(f, "Op::False"),
+            Self::Not => write!(f, "Op::Not"),
+            Self::Equal => write!(f, "Op::Equal"),
+            Self::Greater => write!(f, "Op::Greater"),
+            Self::Less => write!(f, "Op::Less"),
+        }?;
         Ok(f)
     }
 }

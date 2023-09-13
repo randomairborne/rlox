@@ -17,7 +17,6 @@ impl Compiler {
     pub fn compile(source: String) -> Result<Chunk, ()> {
         let scanner = Scanner::init(source);
         let chunk = Chunk::init();
-        let mut line = 0;
         let mut compiler = Compiler {
             scanner,
             chunk,
@@ -27,8 +26,9 @@ impl Compiler {
             panic_mode: false,
         };
         compiler.advance();
-        compiler.expression();
-        compiler.consume(TokenKind::Eof, "Expected end of expression");
+        while !compiler.match_t(TokenKind::Eof) {
+            compiler.declaration();
+        }
         compiler.end();
         if compiler.had_error {
             Err(())
@@ -38,6 +38,24 @@ impl Compiler {
     }
     fn expression(&mut self) {
         self.parse_precedence(Precedence::Assignment);
+    }
+    fn declaration(&mut self) {
+        self.statement();
+    }
+    fn statement(&mut self) {
+        if self.match_t(TokenKind::Print) {
+            self.print_statement();
+        }
+    }
+    fn print_statement(&mut self) {
+        self.expression();
+        self.consume(TokenKind::Semicolon, "Expect ';' after value.");
+        self.emit(Op::Print);
+    }
+    fn expression_statement(&mut self) {
+        self.expression();
+        self.consume(TokenKind::Semicolon, "Expect ';' after expression.");
+        self.emit(Op::Pop);
     }
     fn number(&mut self) {
         let num: f64 = self
@@ -179,6 +197,16 @@ impl Compiler {
     }
     fn current_chunk(&mut self) -> &mut Chunk {
         &mut self.chunk
+    }
+    fn match_t(&mut self, kind: TokenKind) -> bool {
+        if !self.check(kind) {
+            return false;
+        };
+        self.advance();
+        return true;
+    }
+    fn check(&self, kind: TokenKind) -> bool {
+        return self.current.kind == kind;
     }
 }
 

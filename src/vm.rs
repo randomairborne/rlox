@@ -41,7 +41,7 @@ impl Vm {
             {
                 instruction.disassemble(&self.chunk).unwrap();
                 for entry in &self.stack {
-                    print!("[ {entry} ]");
+                    print!("[ {entry:?} ]");
                 }
                 println!();
             }
@@ -75,6 +75,10 @@ impl Vm {
                     let a = self.pop();
                     let b = self.pop();
                     self.push(Value::Bool(a == b))
+                }
+                Op::Print => println!("{}", self.pop()),
+                Op::Pop => {
+                    self.pop();
                 }
                 Op::Return => return Ok(()),
             }
