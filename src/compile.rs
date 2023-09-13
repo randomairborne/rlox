@@ -2,7 +2,6 @@ use crate::{
     chunk::{Chunk, Op},
     scan::{Scanner, Token, TokenKind},
     value::Value,
-    vm::InterpretResult,
 };
 
 pub struct Compiler {
@@ -15,7 +14,7 @@ pub struct Compiler {
 }
 
 impl Compiler {
-    pub fn compile(source: String) -> (InterpretResult, Chunk) {
+    pub fn compile(source: String) -> Result<Chunk, ()> {
         let scanner = Scanner::init(source);
         let chunk = Chunk::init();
         let mut line = 0;
@@ -32,9 +31,9 @@ impl Compiler {
         compiler.consume(TokenKind::Eof, "Expected end of expression");
         compiler.end();
         if compiler.had_error {
-            (InterpretResult::CompileError, compiler.chunk)
+            Err(())
         } else {
-            (InterpretResult::Ok, compiler.chunk)
+            Ok(compiler.chunk)
         }
     }
     fn expression(&mut self) {
@@ -91,6 +90,10 @@ impl Compiler {
             TokenKind::True => self.emit(Op::True),
             _ => unreachable!(),
         }
+    }
+    fn string(&mut self) {
+        let last_idx = self.previous.src.len() - 2;
+        self.emit_const(Value::Str(self.previous.src[1..=last_idx].into()));
     }
     fn parse_precedence(&mut self, precedence: Precedence) {
         self.advance();
@@ -271,12 +274,11 @@ impl From<TokenKind> for ParseRule {
             TokenKind::Bang => P::new(Some(C::unary), None, Prec::None),
             TokenKind::BangEqual => P::new(None, Some(C::binary), Prec::Equality),
             TokenKind::EqualEqual => P::new(None, Some(C::binary), Prec::Equality),
-            TokenKind::Greater => ParseRule::new(None, Some(Compiler::binary), Prec::Comparison),
-            TokenKind::GreaterEqual => {
-                ParseRule::new(None, Some(Compiler::binary), Prec::Comparison)
-            }
-            TokenKind::Less => ParseRule::new(None, Some(Compiler::binary), Prec::Comparison),
-            TokenKind::LessEqual => ParseRule::new(None, Some(Compiler::binary), Prec::Comparison),
+            TokenKind::Greater => ParseRule::new(None, Some(C::binary), Prec::Comparison),
+            TokenKind::GreaterEqual => ParseRule::new(None, Some(C::binary), Prec::Comparison),
+            TokenKind::Less => ParseRule::new(None, Some(C::binary), Prec::Comparison),
+            TokenKind::LessEqual => ParseRule::new(None, Some(C::binary), Prec::Comparison),
+            TokenKind::String => ParseRule::new(Some(C::string), None, Prec::None),
             TokenKind::RightParen
             | TokenKind::LeftBrace
             | TokenKind::RightBrace
@@ -285,7 +287,6 @@ impl From<TokenKind> for ParseRule {
             | TokenKind::Semicolon
             | TokenKind::Equal
             | TokenKind::Identifier
-            | TokenKind::String
             | TokenKind::And
             | TokenKind::Class
             | TokenKind::Else
