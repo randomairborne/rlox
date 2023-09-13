@@ -3,11 +3,18 @@ use crate::{rle::RunLengthEncoded, value::Value};
 #[derive(Clone, Copy)]
 pub enum Op {
     Const(usize),
+    Nil,
+    True,
+    False,
+    Not,
+    Negate,
+    Equal,
+    Greater,
+    Less,
     Add,
     Subtract,
     Multiply,
     Divide,
-    Negate,
     Return,
 }
 

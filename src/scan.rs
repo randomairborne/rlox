@@ -230,7 +230,7 @@ impl Scanner {
             return kind;
         }
 
-        return TokenKind::Identifier;
+        TokenKind::Identifier
     }
 }
 
@@ -297,4 +297,10 @@ pub enum TokenKind {
 
     Error,
     Eof,
+}
+
+impl TokenKind {
+    pub fn rule(self) -> crate::compile::ParseRule {
+        self.into()
+    }
 }

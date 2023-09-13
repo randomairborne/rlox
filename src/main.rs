@@ -1,13 +1,9 @@
 use std::io::Write;
 
-use rlox::{
-    chunk::Chunk,
-    vm::{InterpretResult, Vm},
-};
+use rlox::vm::{InterpretResult, Vm};
 
 fn main() {
     let mut vm = Vm::init();
-    let mut chunk = Chunk::init();
     if std::env::args().len() > 2 {
         eprintln!("Usage: rlox [path]");
         std::process::exit(64);

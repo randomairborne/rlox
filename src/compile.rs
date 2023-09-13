@@ -5,18 +5,19 @@ use crate::{
     vm::InterpretResult,
 };
 
-pub struct Compiler<'a> {
+pub struct Compiler {
     scanner: Scanner,
     current: Token,
     previous: Token,
     had_error: bool,
     panic_mode: bool,
-    chunk: &'a mut Chunk,
+    chunk: Chunk,
 }
 
-impl<'a> Compiler<'a> {
-    pub fn compile(source: String, chunk: &mut Chunk) -> InterpretResult {
-        let mut scanner = Scanner::init(source);
+impl Compiler {
+    pub fn compile(source: String) -> (InterpretResult, Chunk) {
+        let scanner = Scanner::init(source);
+        let chunk = Chunk::init();
         let mut line = 0;
         let mut compiler = Compiler {
             scanner,
@@ -29,37 +30,83 @@ impl<'a> Compiler<'a> {
         compiler.advance();
         compiler.expression();
         compiler.consume(TokenKind::Eof, "Expected end of expression");
+        compiler.end();
         if compiler.had_error {
-            InterpretResult::CompileError
+            (InterpretResult::CompileError, compiler.chunk)
         } else {
-            InterpretResult::Ok
+            (InterpretResult::Ok, compiler.chunk)
         }
     }
-    fn expression(&mut self) {}
-    compile_error!("https://craftinginterpreters.com/compiling-expressions.html#unary-negation");
+    fn expression(&mut self) {
+        self.parse_precedence(Precedence::Assignment);
+    }
     fn number(&mut self) {
         let num: f64 = self
             .previous
             .src
             .parse()
             .expect("Manually validated float unparsable");
-        self.emit_const(num);
+        self.emit_const(Value::Number(num));
     }
     fn unary(&mut self) {
         let operator_kind = self.previous.kind;
 
         // Compile the operand.
-        self.expression();
+        self.parse_precedence(Precedence::Unary);
 
         // Emit the operator instruction.
         match operator_kind {
             TokenKind::Minus => self.emit(Op::Negate),
+            TokenKind::Bang => self.emit(Op::Not),
             _ => unreachable!(),
         }
     }
     fn grouping(&mut self) {
         self.expression();
         self.consume(TokenKind::RightParen, "Expect ')' after expression.");
+    }
+    fn binary(&mut self) {
+        let operator_kind = self.previous.kind;
+        let rule: ParseRule = operator_kind.into();
+        self.parse_precedence(rule.precedence.next());
+
+        match operator_kind {
+            TokenKind::Plus => self.emit(Op::Add),
+            TokenKind::Minus => self.emit(Op::Subtract),
+            TokenKind::Star => self.emit(Op::Multiply),
+            TokenKind::Slash => self.emit(Op::Divide),
+            TokenKind::BangEqual => self.emit2(Op::Equal, Op::Not),
+            TokenKind::EqualEqual => self.emit(Op::Equal),
+            TokenKind::Greater => self.emit(Op::Greater),
+            TokenKind::GreaterEqual => self.emit2(Op::Less, Op::Not),
+            TokenKind::Less => self.emit(Op::Less),
+            TokenKind::LessEqual => self.emit2(Op::Greater, Op::Not),
+            _ => unreachable!(),
+        }
+    }
+    fn literal(&mut self) {
+        match self.previous.kind {
+            TokenKind::Nil => self.emit(Op::Nil),
+            TokenKind::False => self.emit(Op::False),
+            TokenKind::True => self.emit(Op::True),
+            _ => unreachable!(),
+        }
+    }
+    fn parse_precedence(&mut self, precedence: Precedence) {
+        self.advance();
+        let Some(prefix_rule) = self.previous.kind.rule().prefix else {
+            self.error("Expect expression.");
+            return;
+        };
+        prefix_rule(self);
+        while precedence <= self.current.kind.rule().precedence {
+            self.advance();
+            let Some(infix_rule) = self.previous.kind.rule().infix else {
+                self.error("no infix rule when one was expected (ICE)");
+                return;
+            };
+            infix_rule(self);
+        }
     }
     fn scan_token(&mut self) -> Token {
         self.scanner.scan_token()
@@ -108,6 +155,10 @@ impl<'a> Compiler<'a> {
         let previous_line = self.previous.line;
         self.current_chunk().add_op(instruction, previous_line);
     }
+    fn emit2(&mut self, i1: Op, i2: Op) {
+        self.emit(i1);
+        self.emit(i2);
+    }
     fn emit_const(&mut self, value: Value) {
         let previous_line = self.previous.line;
         self.current_chunk().add_const(value, previous_line);
@@ -116,10 +167,140 @@ impl<'a> Compiler<'a> {
         let previous_line = self.previous.line;
         self.current_chunk().add_op(Op::Return, previous_line);
     }
-    fn end(mut self) {
+    fn end(&mut self) {
         self.emit_return();
+        #[cfg(debug_assertions)]
+        if !self.had_error {
+            eprintln!("{}", self.current_chunk().disassemble("code").unwrap())
+        }
     }
     fn current_chunk(&mut self) -> &mut Chunk {
-        self.chunk
+        &mut self.chunk
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Precedence {
+    None,
+    Assignment,
+    Or,
+    And,
+    Equality,
+    Comparison,
+    Term,
+    Factor,
+    Unary,
+    Call,
+    Primary,
+}
+
+impl Precedence {
+    pub fn next(self) -> Self {
+        match self {
+            Precedence::None => Precedence::Assignment,
+            Precedence::Assignment => Precedence::Or,
+            Precedence::Or => Precedence::And,
+            Precedence::And => Precedence::Equality,
+            Precedence::Equality => Precedence::Comparison,
+            Precedence::Comparison => Precedence::Term,
+            Precedence::Term => Precedence::Factor,
+            Precedence::Factor => Precedence::Unary,
+            Precedence::Unary => Precedence::Call,
+            Precedence::Call => Precedence::Primary,
+            Precedence::Primary => Precedence::Primary,
+        }
+    }
+    pub fn last(self) -> Self {
+        match self {
+            Precedence::None => Precedence::None,
+            Precedence::Assignment => Precedence::None,
+            Precedence::Or => Precedence::Assignment,
+            Precedence::And => Precedence::Or,
+            Precedence::Equality => Precedence::And,
+            Precedence::Comparison => Precedence::Equality,
+            Precedence::Term => Precedence::Comparison,
+            Precedence::Factor => Precedence::Term,
+            Precedence::Unary => Precedence::Factor,
+            Precedence::Call => Precedence::Unary,
+            Precedence::Primary => Precedence::Call,
+        }
+    }
+}
+
+type ParseFn = fn(&mut Compiler);
+
+pub struct ParseRule {
+    prefix: Option<ParseFn>,
+    infix: Option<ParseFn>,
+    precedence: Precedence,
+}
+
+impl ParseRule {
+    pub fn new(prefix: Option<ParseFn>, infix: Option<ParseFn>, precedence: Precedence) -> Self {
+        Self {
+            prefix,
+            infix,
+            precedence,
+        }
+    }
+    pub const EMPTY: Self = Self {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
+    };
+    pub fn from_token(token_kind: TokenKind) -> Self {
+        token_kind.into()
+    }
+}
+
+impl From<TokenKind> for ParseRule {
+    fn from(val: TokenKind) -> Self {
+        use Compiler as C;
+        use ParseRule as P;
+        use Precedence as Prec;
+        match val {
+            TokenKind::LeftParen => P::new(Some(C::grouping), None, Prec::None),
+            TokenKind::Minus => P::new(Some(C::unary), Some(C::binary), Prec::Term),
+            TokenKind::Plus => P::new(None, Some(C::binary), Prec::Term),
+            TokenKind::Slash => P::new(None, Some(C::binary), Prec::Factor),
+            TokenKind::Star => P::new(None, Some(C::binary), Prec::Factor),
+            TokenKind::Number => P::new(Some(C::number), None, Prec::None),
+            TokenKind::True => P::new(Some(C::literal), None, Prec::None),
+            TokenKind::False => P::new(Some(C::literal), None, Prec::None),
+            TokenKind::Nil => P::new(Some(C::literal), None, Prec::None),
+            TokenKind::Bang => P::new(Some(C::unary), None, Prec::None),
+            TokenKind::BangEqual => P::new(None, Some(C::binary), Prec::Equality),
+            TokenKind::EqualEqual => P::new(None, Some(C::binary), Prec::Equality),
+            TokenKind::Greater => ParseRule::new(None, Some(Compiler::binary), Prec::Comparison),
+            TokenKind::GreaterEqual => {
+                ParseRule::new(None, Some(Compiler::binary), Prec::Comparison)
+            }
+            TokenKind::Less => ParseRule::new(None, Some(Compiler::binary), Prec::Comparison),
+            TokenKind::LessEqual => ParseRule::new(None, Some(Compiler::binary), Prec::Comparison),
+            TokenKind::RightParen
+            | TokenKind::LeftBrace
+            | TokenKind::RightBrace
+            | TokenKind::Comma
+            | TokenKind::Dot
+            | TokenKind::Semicolon
+            | TokenKind::Equal
+            | TokenKind::Identifier
+            | TokenKind::String
+            | TokenKind::And
+            | TokenKind::Class
+            | TokenKind::Else
+            | TokenKind::For
+            | TokenKind::Fun
+            | TokenKind::If
+            | TokenKind::Or
+            | TokenKind::Print
+            | TokenKind::Return
+            | TokenKind::Super
+            | TokenKind::This
+            | TokenKind::Var
+            | TokenKind::While
+            | TokenKind::Error
+            | TokenKind::Eof => P::EMPTY,
+        }
     }
 }
