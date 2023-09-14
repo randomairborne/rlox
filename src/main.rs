@@ -1,6 +1,8 @@
 use std::io::Write;
 
 use rlox::vm::{InterpretResult, Vm};
+
+compile_error!("restart at https://craftinginterpreters.com/local-variables.html");
 fn main() {
     let mut vm = Vm::init();
     if std::env::args().len() > 2 {
