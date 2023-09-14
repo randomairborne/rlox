@@ -3,6 +3,9 @@ use crate::{rle::RunLengthEncoded, value::Value};
 #[derive(Clone, Copy)]
 pub enum Op {
     Const(usize),
+    DefineGlobal(usize),
+    GetGlobal(usize),
+    SetGlobal(usize),
     Nil,
     True,
     False,
@@ -38,8 +41,8 @@ impl Chunk {
         self.lines.push(line);
         self.code.push(code);
     }
-    pub fn add_const(&mut self, value: Value, line: usize) {
+    pub fn add_const(&mut self, value: Value) -> usize {
         self.constants.push(value);
-        self.add_op(Op::Const(self.constants.len() - 1), line);
+        self.constants.len() - 1
     }
 }

@@ -38,7 +38,6 @@ impl crate::chunk::Op {
             Self::Subtract => write!(f, "Op::Subtract"),
             Self::Multiply => write!(f, "Op::Multiply"),
             Self::Divide => write!(f, "Op::Divide"),
-            Self::Const(idx) => write!(f, "Op::Const {idx} {:?}", chunk.constants[*idx]),
             Self::Nil => write!(f, "Op::Nil"),
             Self::True => write!(f, "Op::True"),
             Self::False => write!(f, "Op::False"),
@@ -46,6 +45,16 @@ impl crate::chunk::Op {
             Self::Equal => write!(f, "Op::Equal"),
             Self::Greater => write!(f, "Op::Greater"),
             Self::Less => write!(f, "Op::Less"),
+            Self::Const(idx) => write!(f, "Op::Const {idx} {:?}", chunk.constants[*idx]),
+            Self::GetGlobal(idx) => {
+                write!(f, "Op::GetGlobal {idx} {:?}", chunk.constants[*idx])
+            }
+            Self::SetGlobal(idx) => {
+                write!(f, "Op::SetGlobal {idx} {:?}", chunk.constants[*idx])
+            }
+            Self::DefineGlobal(idx) => {
+                write!(f, "Op::DefineGlobal {idx} {:?}", chunk.constants[*idx])
+            }
         }?;
         Ok(f)
     }

@@ -40,12 +40,48 @@ impl Compiler {
         self.parse_precedence(Precedence::Assignment);
     }
     fn declaration(&mut self) {
-        self.statement();
+        if self.match_t(TokenKind::Var) {
+            self.var_declaration();
+        } else {
+            self.statement();
+        }
+        if self.panic_mode {
+            self.synchronize();
+        }
     }
     fn statement(&mut self) {
         if self.match_t(TokenKind::Print) {
             self.print_statement();
+        } else {
+            self.expression_statement();
         }
+    }
+    fn var_declaration(&mut self) {
+        let global = self.parse_variable("Expect variable name.");
+
+        if self.match_t(TokenKind::Equal) {
+            self.expression();
+        } else {
+            self.emit(Op::Nil);
+        }
+        self.consume(
+            TokenKind::Semicolon,
+            "Expect ';' after variable declaration.",
+        );
+
+        self.define_variable(global);
+    }
+    fn parse_variable(&mut self, error: &'static str) -> usize {
+        self.consume(TokenKind::Identifier, error);
+        let previous = self.previous.clone();
+        self.identifier_constant(&previous)
+    }
+    fn identifier_constant(&mut self, token: &Token) -> usize {
+        let const_data = token.src.clone().into();
+        self.current_chunk().add_const(Value::Str(const_data))
+    }
+    fn define_variable(&mut self, global: usize) {
+        self.emit(Op::DefineGlobal(global));
     }
     fn print_statement(&mut self) {
         self.expression();
@@ -57,7 +93,20 @@ impl Compiler {
         self.consume(TokenKind::Semicolon, "Expect ';' after expression.");
         self.emit(Op::Pop);
     }
-    fn number(&mut self) {
+    fn variable(&mut self, can_assign: bool) {
+        let previous = self.previous.clone();
+        self.named_variable(&previous, can_assign);
+    }
+    fn named_variable(&mut self, name: &Token, can_assign: bool) {
+        let index = self.identifier_constant(name);
+        if can_assign && self.match_t(TokenKind::Equal) {
+            self.expression();
+            self.emit(Op::SetGlobal(index));
+        } else {
+            self.emit(Op::GetGlobal(index));
+        }
+    }
+    fn number(&mut self, _can_assign: bool) {
         let num: f64 = self
             .previous
             .src
@@ -65,7 +114,7 @@ impl Compiler {
             .expect("Manually validated float unparsable");
         self.emit_const(Value::Number(num));
     }
-    fn unary(&mut self) {
+    fn unary(&mut self, _can_assign: bool) {
         let operator_kind = self.previous.kind;
 
         // Compile the operand.
@@ -78,11 +127,11 @@ impl Compiler {
             _ => unreachable!(),
         }
     }
-    fn grouping(&mut self) {
+    fn grouping(&mut self, _can_assign: bool) {
         self.expression();
         self.consume(TokenKind::RightParen, "Expect ')' after expression.");
     }
-    fn binary(&mut self) {
+    fn binary(&mut self, _can_assign: bool) {
         let operator_kind = self.previous.kind;
         let rule: ParseRule = operator_kind.into();
         self.parse_precedence(rule.precedence.next());
@@ -101,7 +150,7 @@ impl Compiler {
             _ => unreachable!(),
         }
     }
-    fn literal(&mut self) {
+    fn literal(&mut self, _can_assign: bool) {
         match self.previous.kind {
             TokenKind::Nil => self.emit(Op::Nil),
             TokenKind::False => self.emit(Op::False),
@@ -109,7 +158,7 @@ impl Compiler {
             _ => unreachable!(),
         }
     }
-    fn string(&mut self) {
+    fn string(&mut self, _can_assign: bool) {
         let last_idx = self.previous.src.len() - 2;
         self.emit_const(Value::Str(self.previous.src[1..=last_idx].into()));
     }
@@ -119,15 +168,18 @@ impl Compiler {
             self.error("Expect expression.");
             return;
         };
-        prefix_rule(self);
+        let can_assign = precedence <= Precedence::Assignment;
+        prefix_rule(self, can_assign);
         while precedence <= self.current.kind.rule().precedence {
             self.advance();
             let Some(infix_rule) = self.previous.kind.rule().infix else {
-                self.error("no infix rule when one was expected (ICE)");
-                return;
+                panic!("no infix rule when one was expected (ICE)");
             };
-            infix_rule(self);
+            infix_rule(self, can_assign);
         }
+        if can_assign && self.match_t(TokenKind::Equal) {
+            self.error("Invalid assignment target");
+        };
     }
     fn scan_token(&mut self) -> Token {
         self.scanner.scan_token()
@@ -165,6 +217,31 @@ impl Compiler {
         eprintln!(": {}\n", message);
         self.had_error = true;
     }
+    fn synchronize(&mut self) {
+        self.panic_mode = false;
+
+        while self.current.kind != TokenKind::Eof {
+            if self.previous.kind == TokenKind::Semicolon {
+                return;
+            };
+            match self.current.kind {
+                TokenKind::Class
+                | TokenKind::Fun
+                | TokenKind::Var
+                | TokenKind::For
+                | TokenKind::If
+                | TokenKind::While
+                | TokenKind::Print
+                | TokenKind::Return => {
+                    return;
+                }
+
+                _ => {}
+            }
+
+            self.advance();
+        }
+    }
     fn consume(&mut self, kind: TokenKind, message: impl std::fmt::Display) {
         if self.current.kind == kind {
             self.advance();
@@ -180,9 +257,10 @@ impl Compiler {
         self.emit(i1);
         self.emit(i2);
     }
-    fn emit_const(&mut self, value: Value) {
-        let previous_line = self.previous.line;
-        self.current_chunk().add_const(value, previous_line);
+    fn emit_const(&mut self, value: Value) -> usize {
+        let const_idx = self.current_chunk().add_const(value);
+        self.emit(Op::Const(const_idx));
+        const_idx
     }
     fn emit_return(&mut self) {
         let previous_line = self.previous.line;
@@ -203,10 +281,10 @@ impl Compiler {
             return false;
         };
         self.advance();
-        return true;
+        true
     }
     fn check(&self, kind: TokenKind) -> bool {
-        return self.current.kind == kind;
+        self.current.kind == kind
     }
 }
 
@@ -258,7 +336,7 @@ impl Precedence {
     }
 }
 
-type ParseFn = fn(&mut Compiler);
+type ParseFn = fn(&mut Compiler, can_assign: bool);
 
 pub struct ParseRule {
     prefix: Option<ParseFn>,
@@ -307,6 +385,7 @@ impl From<TokenKind> for ParseRule {
             TokenKind::Less => ParseRule::new(None, Some(C::binary), Prec::Comparison),
             TokenKind::LessEqual => ParseRule::new(None, Some(C::binary), Prec::Comparison),
             TokenKind::String => ParseRule::new(Some(C::string), None, Prec::None),
+            TokenKind::Identifier => ParseRule::new(Some(C::variable), None, Prec::None),
             TokenKind::RightParen
             | TokenKind::LeftBrace
             | TokenKind::RightBrace
@@ -314,7 +393,6 @@ impl From<TokenKind> for ParseRule {
             | TokenKind::Dot
             | TokenKind::Semicolon
             | TokenKind::Equal
-            | TokenKind::Identifier
             | TokenKind::And
             | TokenKind::Class
             | TokenKind::Else

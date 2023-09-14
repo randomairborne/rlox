@@ -1,7 +1,6 @@
 use std::io::Write;
 
 use rlox::vm::{InterpretResult, Vm};
-compile_error!("https://craftinginterpreters.com/global-variables.html#error-synchronization");
 fn main() {
     let mut vm = Vm::init();
     if std::env::args().len() > 2 {
