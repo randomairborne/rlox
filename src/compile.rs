@@ -11,6 +11,8 @@ pub struct Compiler {
     had_error: bool,
     panic_mode: bool,
     chunk: Chunk,
+    scope_depth: usize,
+    locals: Vec<Local>,
 }
 
 impl Compiler {
@@ -24,6 +26,8 @@ impl Compiler {
             previous: Default::default(),
             had_error: false,
             panic_mode: false,
+            scope_depth: 0,
+            locals: Vec::new(),
         };
         compiler.advance();
         while !compiler.match_t(TokenKind::Eof) {
@@ -52,6 +56,10 @@ impl Compiler {
     fn statement(&mut self) {
         if self.match_t(TokenKind::Print) {
             self.print_statement();
+        } else if self.match_t(TokenKind::LeftBrace) {
+            self.begin_scope();
+            self.block();
+            self.end_scope();
         } else {
             self.expression_statement();
         }
@@ -73,6 +81,15 @@ impl Compiler {
     }
     fn parse_variable(&mut self, error: &'static str) -> usize {
         self.consume(TokenKind::Identifier, error);
+
+        self.declare_variable();
+        if self.scope_depth > 0 {
+            if let Some(v) = self.locals.last_mut() {
+                v.init = true;
+            }
+            return 0;
+        };
+
         let previous = self.previous.clone();
         self.identifier_constant(&previous)
     }
@@ -81,7 +98,30 @@ impl Compiler {
         self.current_chunk().add_const(Value::Str(const_data))
     }
     fn define_variable(&mut self, global: usize) {
+        if self.scope_depth > 0 {
+            return;
+        }
         self.emit(Op::DefineGlobal(global));
+    }
+    fn declare_variable(&mut self) {
+        if self.scope_depth == 0 {
+            return;
+        }
+        let name = self.previous.clone();
+        for local in self.locals.clone().iter().rev() {
+            if local.depth < self.scope_depth {
+                break;
+            }
+
+            if name.src == local.name.src {
+                self.error(format!(
+                    "Already a variable with the name {} in this scope.",
+                    name.src
+                ));
+            }
+        }
+
+        self.add_local(name.clone());
     }
     fn print_statement(&mut self) {
         self.expression();
@@ -98,13 +138,36 @@ impl Compiler {
         self.named_variable(&previous, can_assign);
     }
     fn named_variable(&mut self, name: &Token, can_assign: bool) {
-        let index = self.identifier_constant(name);
+        let get_op;
+        let set_op;
+        if let Some(idx) = self.resolve_local(&name) {
+            get_op = Op::GetLocal(idx);
+            set_op = Op::SetLocal(idx);
+        } else {
+            let idx = self.identifier_constant(name);
+            get_op = Op::GetGlobal(idx);
+            set_op = Op::SetGlobal(idx);
+        }
         if can_assign && self.match_t(TokenKind::Equal) {
             self.expression();
-            self.emit(Op::SetGlobal(index));
+            self.emit(set_op);
         } else {
-            self.emit(Op::GetGlobal(index));
+            self.emit(get_op);
         }
+    }
+    fn resolve_local(&mut self, name: &Token) -> Option<usize> {
+        let mut index = self.locals.len();
+        for local in self.locals.iter().rev() {
+            index -= 1;
+            if local.name.src == name.src {
+                if !local.init {
+                    self.error("Can't read local variable in its own initializer.");
+                }
+                return Some(index);
+            }
+        }
+
+        return None;
     }
     fn number(&mut self, _can_assign: bool) {
         let num: f64 = self
@@ -266,6 +329,36 @@ impl Compiler {
         let previous_line = self.previous.line;
         self.current_chunk().add_op(Op::Return, previous_line);
     }
+    fn add_local(&mut self, name: Token) {
+        let local = Local {
+            name,
+            depth: self.scope_depth,
+            init: false,
+        };
+        self.locals.push(local)
+    }
+    fn block(&mut self) {
+        while !self.check(TokenKind::RightBrace) && !self.check(TokenKind::Eof) {
+            self.declaration();
+        }
+
+        self.consume(TokenKind::RightBrace, "Expect '}' after block.");
+    }
+    fn begin_scope(&mut self) {
+        self.scope_depth += 1;
+    }
+    fn end_scope(&mut self) {
+        self.scope_depth -= 1;
+        let scope_depth = self.scope_depth;
+        while self
+            .locals
+            .last()
+            .is_some_and(|local| local.depth > scope_depth)
+        {
+            self.emit(Op::Pop);
+            self.locals.pop();
+        }
+    }
     fn end(&mut self) {
         self.emit_return();
         #[cfg(debug_assertions)]
@@ -410,4 +503,11 @@ impl From<TokenKind> for ParseRule {
             | TokenKind::Eof => P::EMPTY,
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct Local {
+    name: Token,
+    depth: usize,
+    init: bool,
 }

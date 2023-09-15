@@ -86,6 +86,11 @@ impl Vm {
                         return Err(format!("Undefined variable {name}"));
                     }
                 }
+                Op::GetLocal(idx) => {
+                    let value = self.stack[idx].clone();
+                    self.push(value);
+                }
+                Op::SetLocal(idx) => self.stack[idx] = self.peek(0).clone(),
                 Op::Add => self.add()?,
                 Op::Subtract => crate::binary_op!(self, Value::Number, -),
                 Op::Multiply => crate::binary_op!(self, Value::Number, *),

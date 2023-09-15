@@ -46,15 +46,11 @@ impl crate::chunk::Op {
             Self::Greater => write!(f, "Op::Greater"),
             Self::Less => write!(f, "Op::Less"),
             Self::Const(idx) => write!(f, "Op::Const {idx} {:?}", chunk.constants[*idx]),
-            Self::GetGlobal(idx) => {
-                write!(f, "Op::GetGlobal {idx} {:?}", chunk.constants[*idx])
-            }
-            Self::SetGlobal(idx) => {
-                write!(f, "Op::SetGlobal {idx} {:?}", chunk.constants[*idx])
-            }
-            Self::DefineGlobal(idx) => {
-                write!(f, "Op::DefineGlobal {idx} {:?}", chunk.constants[*idx])
-            }
+            Self::GetGlobal(idx) => write!(f, "Op::GetGlobal ({idx})"),
+            Self::SetGlobal(idx) => write!(f, "Op::SetGlobal ({idx})"),
+            Self::GetLocal(idx) => write!(f, "Op::GetLocal ({idx})"),
+            Self::SetLocal(idx) => write!(f, "Op::SetLocal ({idx})"),
+            Self::DefineGlobal(idx) => write!(f, "Op::DefineGlobal ({idx})"),
         }?;
         Ok(f)
     }
