@@ -91,6 +91,11 @@ impl Vm {
                     self.push(value);
                 }
                 Op::SetLocal(idx) => self.stack[idx] = self.peek(0).clone(),
+                Op::JumpIfFalse(distance) => {
+                    if self.peek(0).is_falsey() {
+                        self.ip += distance;
+                    }
+                }
                 Op::Add => self.add()?,
                 Op::Subtract => crate::binary_op!(self, Value::Number, -),
                 Op::Multiply => crate::binary_op!(self, Value::Number, *),

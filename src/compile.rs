@@ -56,6 +56,8 @@ impl Compiler {
     fn statement(&mut self) {
         if self.match_t(TokenKind::Print) {
             self.print_statement();
+        } else if self.match_t(TokenKind::If) {
+            self.if_statement();
         } else if self.match_t(TokenKind::LeftBrace) {
             self.begin_scope();
             self.block();
@@ -92,6 +94,16 @@ impl Compiler {
 
         let previous = self.previous.clone();
         self.identifier_constant(&previous)
+    }
+    fn if_statement(&mut self) {
+        self.consume(TokenKind::LeftParen, "Expect '(' after 'if'.");
+        self.expression();
+        self.consume(TokenKind::RightParen, "Expect ')' after condition.");
+
+        let jump_loc = self.emit_jump(Op::JumpIfFalse(usize::MAX));
+        self.statement();
+
+        self.chunk.code[jump_loc] = Op::JumpIfFalse(jump_loc);
     }
     fn identifier_constant(&mut self, token: &Token) -> usize {
         let const_data = token.src.clone().into();
@@ -328,6 +340,11 @@ impl Compiler {
     fn emit_return(&mut self) {
         let previous_line = self.previous.line;
         self.current_chunk().add_op(Op::Return, previous_line);
+    }
+    fn emit_jump(&mut self, instruction: Op) -> usize {
+        self.emit(instruction);
+        compile_error!("Chapter 22, jumps");
+        self.current_chunk().
     }
     fn add_local(&mut self, name: Token) {
         let local = Local {

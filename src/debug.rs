@@ -51,6 +51,7 @@ impl crate::chunk::Op {
             Self::GetLocal(idx) => write!(f, "Op::GetLocal ({idx})"),
             Self::SetLocal(idx) => write!(f, "Op::SetLocal ({idx})"),
             Self::DefineGlobal(idx) => write!(f, "Op::DefineGlobal ({idx})"),
+            Self::JumpIfFalse(distance) => write!(f, "Op::JumpIfFalse ({distance})"),
         }?;
         Ok(f)
     }
